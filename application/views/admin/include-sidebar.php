@@ -467,6 +467,12 @@ if ($authentication_settings !== null && is_string($authentication_settings)) {
                             <?php } ?>
                             <?php if (has_permissions('read', 'city')) { ?>
                                 <li class="nav-item">
+                                    <a href="<?= base_url('admin/area/manage-zones') ?>" class="nav-link">
+                                        <i class="fa fa-location-arrow nav-icon "></i>
+                                        <p>Zones</p>
+                                    </a>
+                                </li>
+                                <li class="nav-item">
                                     <a href="<?= base_url('admin/area/manage-city-outlines') ?>" class="nav-link">
                                         <i class="fas fa-chart-area nav-icon "></i>
                                         <p>Deliverable Area</p>
@@ -538,7 +544,7 @@ if ($authentication_settings !== null && is_string($authentication_settings)) {
                                 <p class="text">Database Backup</p>
                             </a>
                         </li>
-                        
+
                 <?php  }
                 } ?>
             </ul>

@@ -125,7 +125,7 @@ class MyConfig
             $doctor_brown = get_settings('doctor_brown', true);
             if (empty($doctor_brown) && !in_array(current_url(), $exclude_uris)) {
                 /* redirect him to the page where he can enter the purchase code */
-                redirect(base_url("admin/purchase-code"));
+                // redirect(base_url("admin/purchase-code"));
             }
         }
     }
@@ -273,7 +273,7 @@ class MyConfig
         $doctor_brown = get_settings('doctor_brown', true);
         if (empty($doctor_brown) && !in_array(current_url(), $exclude_uris)) {
             /* redirect him to the page where he can enter the purchase code */
-            redirect(base_url("admin/purchase-code"));
+            // redirect(base_url("admin/purchase-code"));
         } else {
             $calculated_time_check = $time_check = '';
 
@@ -285,7 +285,7 @@ class MyConfig
             $calculated_time_check = hash('sha256', $str);
             if ($time_check != $calculated_time_check || empty($calculated_time_check) || empty($time_check)) {
                 if (!in_array(current_url(), $exclude_uris)) {
-                    redirect(base_url("admin/purchase-code"));
+                    // redirect(base_url("admin/purchase-code"));
                 }
             }
         }

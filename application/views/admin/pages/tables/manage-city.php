@@ -144,7 +144,7 @@ $map_url = "https://maps.googleapis.com/maps/api/js?key=$javascript_map_key&libr
                                         value="<?= @$fetched_data[0]['max_deliverable_distance'] ?>"
                                         placeholder="Enter Delivarable Maximum Distance in km" min='0' />
                                 </div>
-                                <div class="form-group ">
+                                <!-- <div class="form-group ">
                                     <label for="cities">Related Deliverable Cities</label>
 
                                     <select name="bordering_city_ids[]" id="bordering_city_ids"
@@ -152,7 +152,7 @@ $map_url = "https://maps.googleapis.com/maps/api/js?key=$javascript_map_key&libr
 
                                     </select>
 
-                                </div>
+                                </div> -->
                                 <div class="form-group">
                                     <label for="delivery_charge_method">Delivery Charge Methods <span
                                             class='text-danger text-sm'>*</span></label>
@@ -265,8 +265,8 @@ $map_url = "https://maps.googleapis.com/maps/api/js?key=$javascript_map_key&libr
                                                 Latitude</th>
                                             <th data-field="longitude" data-sortable="false" data-visible="false">
                                                 Longitude</th>
-                                            <th data-field="bordering_city_ids" data-sortable="false"
-                                                data-visible="true">Bordering City Ids</th>
+                                            <!-- <th data-field="bordering_city_ids" data-sortable="false"
+                                                data-visible="true">Bordering City Ids</th> -->
                                             <th data-field="time_to_travel" data-sortable="false" data-visible="false">
                                                 Time to Travel 1 km(in Minutes)</th>
                                             <th data-field="geolocation_type" data-sortable="false"

@@ -4554,7 +4554,7 @@ function is_restro_open($id)
     }
 }
 
-function is_order_deliverable($address_id, $latitude_y, $longitude_x, $branch_id, $type = "address")
+function is_order_deliverable_old($address_id, $latitude_y, $longitude_x, $branch_id, $type = "address")
 {
     if (!empty($branch_id) || $branch_id != "") {
         // get branch points
@@ -4610,6 +4610,68 @@ function is_order_deliverable($address_id, $latitude_y, $longitude_x, $branch_id
         }
     } else {
 
+        return false;
+    }
+}
+
+function is_order_deliverable($address_id, $latitude_y, $longitude_x, $branch_id, $type = "address")
+{
+    if (!empty($branch_id) || $branch_id != "") {
+        // Get branch data
+        $branch_data = fetch_details(['id' => $branch_id], "branch", "latitude,longitude,city_id");
+
+        if (empty($branch_data)) {
+            return false;
+        }
+
+        // Calculate distance from branch to delivery location
+        $where = "ST_Distance_Sphere(POINT(latitude,longitude), ST_GeomFromText('POINT(" . $branch_data[0]['latitude'] . " " . $branch_data[0]['longitude'] . ")') ) as distance";
+        $data = fetch_details(['id' => $branch_id], "branch", "latitude,longitude,$where,city_id");
+
+        // Get city_id based on type
+        if ($type == "city") {
+            $city_id = $address_id;
+        } else {
+            $city_id = $data[0]['city_id'];
+        }
+
+        // Fetch zones for the city
+        $t = &get_instance();
+        $zones = $t->db->select('z.id as zone_id, z.zone_name, z.boundary_points, z.city_id, c.max_deliverable_distance')
+            ->from('zones z')
+            ->join('cities c', 'c.id = z.city_id', 'left')
+            ->where('z.city_id', $city_id)
+            ->where('z.status', 1)
+            ->get()
+            ->result_array();
+
+        if (empty($zones)) {
+            return false;
+        }
+
+        // Check if the delivery location falls within any zone
+        $matching_zone = null;
+        foreach ($zones as $zone) {
+            if (point_in_polygon($latitude_y, $longitude_x, $zone['boundary_points'])) {
+                $matching_zone = $zone;
+                break;
+            }
+        }
+
+        if (!$matching_zone) {
+            return false; // Location not in any zone
+        }
+
+        // Check if partner is within deliverable distance
+        $distance = $data[0]['distance'] / 1000; // Convert to km
+        $max_distance = $matching_zone['max_deliverable_distance'];
+
+        if ($distance <= $max_distance) {
+            return true; // In distance and in zone
+        } else {
+            return false; // Not in distance
+        }
+    } else {
         return false;
     }
 }
@@ -5534,6 +5596,54 @@ if (!function_exists('display_breadcrumbs')) {
         $breadcrumbs .= '</ol>';
         return $breadcrumbs;
     }
+}
+
+/**
+ * Check if a point (lat, long) is inside a polygon
+ * @param float $lat Latitude of the point
+ * @param float $long Longitude of the point
+ * @param string|array $boundary_points JSON string or array of polygon coordinates
+ * @return bool
+ */
+function point_in_polygon($lat, $long, $boundary_points)
+{
+    // If boundary_points is a JSON string, decode it
+    if (is_string($boundary_points)) {
+        $polygon = json_decode($boundary_points, true);
+    } else {
+        $polygon = $boundary_points;
+    }
+
+    // Validate polygon data
+    if (!is_array($polygon) || count($polygon) < 3) {
+        return false;
+    }
+
+    $vertices_count = count($polygon);
+    $is_inside = false;
+
+    // Ray casting algorithm
+    for ($i = 0, $j = $vertices_count - 1; $i < $vertices_count; $j = $i++) {
+        // Extract coordinates (support different formats)
+        $xi = isset($polygon[$i]['lat']) ? $polygon[$i]['lat'] : (isset($polygon[$i][0]) ? $polygon[$i][0] : null);
+        $yi = isset($polygon[$i]['lng']) ? $polygon[$i]['lng'] : (isset($polygon[$i]['long']) ? $polygon[$i]['long'] : (isset($polygon[$i][1]) ? $polygon[$i][1] : null));
+
+        $xj = isset($polygon[$j]['lat']) ? $polygon[$j]['lat'] : (isset($polygon[$j][0]) ? $polygon[$j][0] : null);
+        $yj = isset($polygon[$j]['lng']) ? $polygon[$j]['lng'] : (isset($polygon[$j]['long']) ? $polygon[$j]['long'] : (isset($polygon[$j][1]) ? $polygon[$j][1] : null));
+
+        if ($xi === null || $yi === null || $xj === null || $yj === null) {
+            continue;
+        }
+
+        $intersect = (($yi > $long) != ($yj > $long))
+            && ($lat < ($xj - $xi) * ($long - $yi) / ($yj - $yi) + $xi);
+
+        if ($intersect) {
+            $is_inside = !$is_inside;
+        }
+    }
+
+    return $is_inside;
 }
 
 

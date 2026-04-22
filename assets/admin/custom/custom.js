@@ -6772,14 +6772,16 @@ function addMarker(position) {
 window.initMap = initMap;
 
 // end
-
+// ================================
 // set city outlines
 var map; // Global declaration of the map
 var lat_longs = new Array();
-// var markers = new Array();
+var markers = new Array();
 var drawingManager;
 var circle;
 var circle_points = [];
+var currentOverlay = null; // Store the current drawn overlay
+
 function initMapBoundry() {
   var myLatlng = new google.maps.LatLng(23.242001, 69.666931);
   var myOptions = {
@@ -6794,21 +6796,16 @@ function initMapBoundry() {
     drawingControlOptions: {
       position: google.maps.ControlPosition.TOP_CENTER,
       drawingModes: [
-        google.maps.drawing.OverlayType.POLYGON,
-        google.maps.drawing.OverlayType.CIRCLE
+        google.maps.drawing.OverlayType.POLYGON
       ]
     },
     polygonOptions: {
-      editable: true
-    },
-    circleOptions: {
-      fillColor: "#666666",
-      fillOpacity: 0.5,
-      strokeWeight: 1,
-      clickable: true,
       editable: true,
-      draggable: true,
-      zIndex: 1
+      strokeColor: "#FF0000",
+      strokeOpacity: 0.8,
+      strokeWeight: 2,
+      fillColor: "#FF0000",
+      fillOpacity: 0.35
     }
   });
   drawingManager.setMap(map);
@@ -6819,6 +6816,17 @@ function initMapBoundry() {
     function (event) {
       var newShape = event.overlay;
       newShape.type = event.type;
+
+      // Remove previous overlay if exists
+      if (currentOverlay) {
+        currentOverlay.setMap(null);
+      }
+
+      // Store the new overlay
+      currentOverlay = event.overlay;
+
+      // Set drawing mode to null to allow editing
+      drawingManager.setDrawingMode(null);
     }
   );
 
@@ -6826,32 +6834,13 @@ function initMapBoundry() {
     drawingManager,
     "overlaycomplete",
     function (event) {
-      if (event.type == "circle") {
-        circle_points = [];
-        var radius = event.overlay.getRadius();
-        var lat = event.overlay.getCenter().lat();
-        var long = event.overlay.getCenter().lng();
-        circle_points.push({
-          type: "circle",
-          radius: radius,
-          lat: lat,
-          long: long
-        });
-        $('input[name="city_outlines"]').val(JSON.stringify(circle_points));
-        $("#vertices").val(JSON.stringify(circle_points));
-      } else {
-        overlayClickListener(event.overlay);
-        $("#vertices").val(event.overlay.getPath().getArray());
-      }
+      overlayClickListener(event.overlay);
+      $("#vertices").val(event.overlay.getPath().getArray());
     }
   );
-  google.maps.event.addListener(
-    drawingManager,
-    "overlaycomplete",
-    function (event) {
-      overlayRemoveListener(event.overlay, false);
-    }
-  );
+
+  // Setup button listeners
+  setupButtonListeners();
 }
 
 function overlayClickListener(overlay) {
@@ -6859,36 +6848,82 @@ function overlayClickListener(overlay) {
     $("#vertices").val(overlay.getPath().getArray());
   });
 }
-function overlayRemoveListener(
-  overlay,
-  is_restore = false,
-  drawed_map = "",
-  not_remove = false
-) {
-  if (is_restore == true) {
-    document.getElementById("add-line").addEventListener("click", addLine);
-  }
-  document.getElementById("clear-line").addEventListener("click", clearLine);
-  if (not_remove == false) {
-    document
-      .getElementById("remove-line")
-      .addEventListener("click", removeLine);
-  }
-  function clearLine() {
-    overlay.setMap(null);
-    $("#vertices").val("");
-  }
-  function removeLine() {
-    overlay.setMap(null);
-    $("#vertices").val("");
-  }
-  function addLine() {
-    if (drawed_map != "") {
-      overlay.setMap(drawed_map);
+
+// Setup button listeners for map controls
+function setupButtonListeners() {
+  var savedOverlay = null;
+
+  // Remove Newly Added Line button
+  document.getElementById("remove-line").addEventListener("click", function () {
+    if (currentOverlay) {
+      currentOverlay.setMap(null);
+      savedOverlay = currentOverlay;
+      currentOverlay = null;
+      $("#vertices").val("");
+      drawingManager.setDrawingMode(google.maps.drawing.OverlayType.POLYGON);
+      iziToast.success({
+        message: '<span class="messages_style">Line removed. You can draw a new one or restore the old one.</span>'
+      });
     } else {
-      overlay.setMap(map);
+      iziToast.warning({
+        message: '<span class="messages_style">No line to remove. Please draw a zone first.</span>'
+      });
     }
-  }
+  });
+
+  // Clear Map button - clears both newly drawn zone AND existing zones from database
+  document.getElementById("clear-line").addEventListener("click", function () {
+    var hasContent = false;
+
+    // Check if there's a newly drawn zone
+    if (currentOverlay) {
+      currentOverlay.setMap(null);
+      currentOverlay = null;
+      savedOverlay = null;
+      hasContent = true;
+    }
+
+    // Check if there are existing zones from database
+    if (drawnZones && drawnZones.length > 0) {
+      drawnZones.forEach(function (overlay) {
+        overlay.setMap(null);
+      });
+      drawnZones = [];
+      hasContent = true;
+    }
+
+    if (hasContent) {
+      $("#vertices").val("");
+      drawingManager.setDrawingMode(google.maps.drawing.OverlayType.POLYGON);
+      iziToast.success({
+        message: '<span class="messages_style">Map cleared. You can draw a new zone.</span>'
+      });
+    } else {
+      iziToast.warning({
+        message: '<span class="messages_style">Map is already clear.</span>'
+      });
+    }
+  });
+
+  // Restore Old Map button
+  document.getElementById("add-line").addEventListener("click", function () {
+    if (savedOverlay) {
+      if (currentOverlay) {
+        currentOverlay.setMap(null);
+      }
+      savedOverlay.setMap(map);
+      currentOverlay = savedOverlay;
+      $("#vertices").val(savedOverlay.getPath().getArray());
+      drawingManager.setDrawingMode(null);
+      iziToast.success({
+        message: '<span class="messages_style">Previous zone restored.</span>'
+      });
+    } else {
+      iziToast.warning({
+        message: '<span class="messages_style">No previous zone to restore.</span>'
+      });
+    }
+  });
 }
 if (window.location.href.indexOf("admin/area/manage-city-outlines") > -1) {
   google.maps.event.addDomListener(window, "load", initMapBoundry);
@@ -6896,8 +6931,10 @@ if (window.location.href.indexOf("admin/area/manage-city-outlines") > -1) {
 
 var map, marker;
 var lat_longs = new Array();
-// var markers = new Array();
+var markers = new Array();
 var drawingManager;
+var drawnZones = []; // Array to store all drawn zone overlays
+
 $(document).ready(function () {
   $(".target").on("change", function () {
     var coordinate = $("#city_id").val().split(",");
@@ -6916,41 +6953,389 @@ $(document).ready(function () {
 
     marker.setVisible(true);
     var selectedOption = $(this).find("option:selected");
-    var geolocation_type = selectedOption.data("geolocation_type");
-    var radius = selectedOption.data("radius");
-    var boundary_points = selectedOption.data("boundary_points");
-    var json_points = JSON.stringify(boundary_points);
-    $("#vertices").val(`Boundary Points : ${json_points}  Radius: ${radius}`);
-    if (geolocation_type) {
-      if (geolocation_type === "polygon") {
-        var bermudaTriangle = new google.maps.Polygon({
-          paths: boundary_points,
-          strokeColor: "#FF0000",
-          strokeOpacity: 0.8,
-          strokeWeight: 2,
-          fillColor: "#FF0000",
-          fillOpacity: 0.35,
-          editable: true,
-          geodesic: true
-        });
-        bermudaTriangle.setMap(map);
-        overlayRemoveListener(bermudaTriangle, true, map, true);
-      } else if (geolocation_type === "circle") {
-        const cityCircle = new google.maps.Circle({
-          strokeColor: "#FF0000",
-          strokeOpacity: 0.8,
-          strokeWeight: 2,
-          fillColor: "#FF0000",
-          fillOpacity: 0.35,
-          map,
-          center: boundary_points[0],
-          radius: Math.sqrt(radius) * 100
-        });
-        overlayRemoveListener(cityCircle, true, map, true);
-      }
+    var city_id = selectedOption.data("city_id");
+
+    // Clear previously drawn zones
+    if (drawnZones.length > 0) {
+      drawnZones.forEach(function (overlay) {
+        overlay.setMap(null);
+      });
+      drawnZones = [];
+    }
+
+    // Clear vertices display
+    $("#vertices").val("");
+
+    // Fetch and display all zones for this city
+    if (city_id) {
+      $.ajax({
+        url: base_url + from + "/area/get_zones_by_city",
+        type: "GET",
+        data: {
+          city_id: city_id
+        },
+        dataType: "json",
+        success: function (response) {
+          if (response.error == false && response.data && response.data.length > 0) {
+            var zoneInfo = "Zones in this city:\n\n";
+
+            response.data.forEach(function (zone, index) {
+              var boundary_points = JSON.parse(zone.boundary_points);
+              var geolocation_type = zone.geolocation_type;
+              var radius = zone.radius;
+
+              // Generate different colors for different zones
+              var colors = [
+                "#FF0000", "#00FF00", "#0000FF", "#FFFF00",
+                "#FF00FF", "#00FFFF", "#FFA500", "#800080"
+              ];
+              var color = colors[index % colors.length];
+
+              zoneInfo += (index + 1) + ". " + zone.zone_name + " (" + geolocation_type + ")\n";
+
+              if (geolocation_type === "polygon") {
+                var zonePolygon = new google.maps.Polygon({
+                  paths: boundary_points,
+                  strokeColor: color,
+                  strokeOpacity: 0.8,
+                  strokeWeight: 2,
+                  fillColor: color,
+                  fillOpacity: 0.25,
+                  editable: false,
+                  geodesic: true
+                });
+                zonePolygon.setMap(map);
+                drawnZones.push(zonePolygon);
+
+                // Calculate the bounds of the polygon
+                var bounds = new google.maps.LatLngBounds();
+                boundary_points.forEach(function (point) {
+                  bounds.extend(point);
+                });
+
+                // Get the top-right corner (northeast corner)
+                var topRight = bounds.getNorthEast();
+
+                // Create custom overlay for delete button
+                var DeleteButtonOverlay = function (position, map, zone, polygon, overlay) {
+                  this.position = position;
+                  this.map = map;
+                  this.zone = zone;
+                  this.polygon = polygon;
+                  this.overlay = overlay;
+                  this.div = null;
+                  this.setMap(map);
+                };
+
+                DeleteButtonOverlay.prototype = new google.maps.OverlayView();
+
+                DeleteButtonOverlay.prototype.onAdd = function () {
+                  var div = document.createElement('div');
+                  div.className = 'zone-delete-button';
+                  div.innerHTML = '<i class="fa fa-times" style="color: #007bff; font-size: 16px;"></i>';
+                  div.style.position = 'absolute';
+                  div.style.cursor = 'pointer';
+                  div.style.backgroundColor = 'white';
+                  div.style.borderRadius = '50%';
+                  div.style.width = '24px';
+                  div.style.height = '24px';
+                  div.style.display = 'flex';
+                  div.style.alignItems = 'center';
+                  div.style.justifyContent = 'center';
+                  div.style.boxShadow = '0 2px 6px rgba(0,0,0,0.3)';
+                  div.style.border = '2px solid #007bff';
+                  div.style.transition = 'all 0.2s';
+                  div.title = 'Delete ' + this.zone.zone_name;
+
+                  // Hover effect
+                  div.addEventListener('mouseenter', function () {
+                    this.style.backgroundColor = '#007bff';
+                    this.querySelector('i').style.color = 'white';
+                    this.style.transform = 'scale(1.1)';
+                  });
+
+                  div.addEventListener('mouseleave', function () {
+                    this.style.backgroundColor = 'white';
+                    this.querySelector('i').style.color = '#007bff';
+                    this.style.transform = 'scale(1)';
+                  });
+
+                  var self = this;
+                  div.addEventListener('click', function (e) {
+                    e.stopPropagation();
+                    // Call deleteZone function to permanently delete from database
+                    deleteZone(self.zone.id, self.zone.zone_name);
+                  });
+
+                  this.div = div;
+                  var panes = this.getPanes();
+                  panes.floatPane.appendChild(div);
+                };
+
+                DeleteButtonOverlay.prototype.draw = function () {
+                  var overlayProjection = this.getProjection();
+                  var position = overlayProjection.fromLatLngToDivPixel(this.position);
+                  var div = this.div;
+                  // Position at top-right corner, slightly offset outside the zone
+                  div.style.left = (position.x + 5) + 'px';
+                  div.style.top = (position.y - 5) + 'px';
+                };
+
+                DeleteButtonOverlay.prototype.onRemove = function () {
+                  if (this.div) {
+                    this.div.parentNode.removeChild(this.div);
+                    this.div = null;
+                  }
+                };
+
+                // Create the delete button overlay at top-right corner
+                var deleteButton = new DeleteButtonOverlay(topRight, map, zone, zonePolygon, null);
+                drawnZones.push(deleteButton); // Store overlay reference
+
+                // Add info window with delete button on click
+                google.maps.event.addListener(zonePolygon, 'click', function (event) {
+                  var infoWindowContent = '<div style="padding:10px;">' +
+                    '<strong>' + zone.zone_name + '</strong><br>' +
+                    'Type: Polygon<br>' +
+                    '<button class="btn btn-danger btn-sm mt-2 delete-zone-btn" data-zone-id="' + zone.id + '" data-zone-name="' + zone.zone_name + '">' +
+                    '<i class="fa fa-trash"></i> Delete Zone' +
+                    '</button>' +
+                    '</div>';
+
+                  var infoWindow = new google.maps.InfoWindow({
+                    content: infoWindowContent,
+                    position: event.latLng
+                  });
+                  infoWindow.open(map);
+
+                  // Add click event listener for delete button after info window opens
+                  google.maps.event.addListenerOnce(infoWindow, 'domready', function () {
+                    $('.delete-zone-btn').off('click').on('click', function () {
+                      var zoneId = $(this).data('zone-id');
+                      var zoneName = $(this).data('zone-name');
+                      deleteZone(zoneId, zoneName);
+                      infoWindow.close();
+                    });
+                  });
+                });
+
+              } else if (geolocation_type === "circle") {
+                var zoneCircle = new google.maps.Circle({
+                  strokeColor: color,
+                  strokeOpacity: 0.8,
+                  strokeWeight: 2,
+                  fillColor: color,
+                  fillOpacity: 0.25,
+                  map: map,
+                  center: boundary_points[0],
+                  radius: Math.sqrt(radius) * 100,
+                  editable: false
+                });
+                drawnZones.push(zoneCircle);
+
+                // Create a custom overlay for the delete button at circle's top-right
+                // Calculate top-right position of circle
+                var circleCenter = boundary_points[0];
+                var circleRadius = Math.sqrt(radius) * 100;
+
+                // Calculate approximate top-right corner of circle bounds
+                var topRightLat = circleCenter.lat + (circleRadius / 111320); // 1 degree lat ≈ 111.32 km
+                var topRightLng = circleCenter.lng + (circleRadius / (111320 * Math.cos(circleCenter.lat * Math.PI / 180)));
+                var topRight = new google.maps.LatLng(topRightLat, topRightLng);
+
+                var DeleteButtonOverlay = function (position, map, zone, circle) {
+                  this.position = position;
+                  this.map = map;
+                  this.zone = zone;
+                  this.circle = circle;
+                  this.div = null;
+                  this.setMap(map);
+                };
+
+                DeleteButtonOverlay.prototype = new google.maps.OverlayView();
+
+                DeleteButtonOverlay.prototype.onAdd = function () {
+                  var div = document.createElement('div');
+                  div.className = 'zone-delete-button';
+                  div.innerHTML = '<i class="fa fa-times" style="color: #007bff; font-size: 16px;"></i>';
+                  div.style.position = 'absolute';
+                  div.style.cursor = 'pointer';
+                  div.style.backgroundColor = 'white';
+                  div.style.borderRadius = '50%';
+                  div.style.width = '24px';
+                  div.style.height = '24px';
+                  div.style.display = 'flex';
+                  div.style.alignItems = 'center';
+                  div.style.justifyContent = 'center';
+                  div.style.boxShadow = '0 2px 6px rgba(0,0,0,0.3)';
+                  div.style.border = '2px solid #007bff';
+                  div.style.transition = 'all 0.2s';
+                  div.title = 'Delete ' + this.zone.zone_name;
+
+                  // Hover effect
+                  div.addEventListener('mouseenter', function () {
+                    this.style.backgroundColor = '#007bff';
+                    this.querySelector('i').style.color = 'white';
+                    this.style.transform = 'scale(1.1)';
+                  });
+
+                  div.addEventListener('mouseleave', function () {
+                    this.style.backgroundColor = 'white';
+                    this.querySelector('i').style.color = '#007bff';
+                    this.style.transform = 'scale(1)';
+                  });
+
+                  var self = this;
+                  div.addEventListener('click', function (e) {
+                    e.stopPropagation();
+                    // Call deleteZone function to permanently delete from database
+                    deleteZone(self.zone.id, self.zone.zone_name);
+                  });
+
+                  this.div = div;
+                  var panes = this.getPanes();
+                  panes.floatPane.appendChild(div);
+                };
+
+                DeleteButtonOverlay.prototype.draw = function () {
+                  var overlayProjection = this.getProjection();
+                  var position = overlayProjection.fromLatLngToDivPixel(this.position);
+                  var div = this.div;
+                  // Position at top-right corner, slightly offset outside the zone
+                  div.style.left = (position.x + 5) + 'px';
+                  div.style.top = (position.y - 5) + 'px';
+                };
+
+                DeleteButtonOverlay.prototype.onRemove = function () {
+                  if (this.div) {
+                    this.div.parentNode.removeChild(this.div);
+                    this.div = null;
+                  }
+                };
+
+                // Create the delete button overlay at circle's top-right corner
+                var deleteButton = new DeleteButtonOverlay(topRight, map, zone, zoneCircle);
+                drawnZones.push(deleteButton); // Store overlay reference
+
+                // Add info window with delete button on click
+                google.maps.event.addListener(zoneCircle, 'click', function (event) {
+                  var infoWindowContent = '<div style="padding:10px;">' +
+                    '<strong>' + zone.zone_name + '</strong><br>' +
+                    'Type: Circle<br>' +
+                    '<button class="btn btn-danger btn-sm mt-2 delete-zone-btn" data-zone-id="' + zone.id + '" data-zone-name="' + zone.zone_name + '">' +
+                    '<i class="fa fa-trash"></i> Delete Zone' +
+                    '</button>' +
+                    '</div>';
+
+                  var infoWindow = new google.maps.InfoWindow({
+                    content: infoWindowContent,
+                    position: event.latLng
+                  });
+                  infoWindow.open(map);
+
+                  // Add click event listener for delete button after info window opens
+                  google.maps.event.addListenerOnce(infoWindow, 'domready', function () {
+                    $('.delete-zone-btn').off('click').on('click', function () {
+                      var zoneId = $(this).data('zone-id');
+                      var zoneName = $(this).data('zone-name');
+                      deleteZone(zoneId, zoneName);
+                      infoWindow.close();
+                    });
+                  });
+                });
+              }
+            });
+
+            $("#vertices").val(zoneInfo);
+
+            iziToast.success({
+              message: '<span class="messages_style">' + response.data.length + ' zone(s) loaded for this city</span>'
+            });
+          } else {
+            $("#vertices").val("No zones created for this city yet. You can create a new zone.");
+            iziToast.info({
+              message: '<span class="messages_style">No zones found for this city. Create your first zone!</span>'
+            });
+          }
+        },
+        error: function () {
+          iziToast.error({
+            message: '<span class="messages_style">Failed to load zones</span>'
+          });
+        }
+      });
     }
   });
 });
+
+
+// Function to delete a zone
+function deleteZone(zoneId, zoneName) {
+  Swal.fire({
+    title: 'Delete Zone?',
+    text: 'Are you sure you want to delete "' + zoneName + '"? This action cannot be undone!',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonColor: '#d33',
+    cancelButtonColor: '#3085d6',
+    confirmButtonText: 'Yes, delete it!',
+    cancelButtonText: 'Cancel',
+    showLoaderOnConfirm: true,
+    preConfirm: function () {
+      return new Promise((resolve, reject) => {
+        $.ajax({
+          url: base_url + from + '/area/delete_zone',
+          type: 'POST',
+          data: {
+            zone_id: zoneId,
+            [csrfName]: csrfHash
+          },
+          dataType: 'json'
+        })
+          .done(function (response) {
+            csrfName = response['csrfName'];
+            csrfHash = response['csrfHash'];
+            if (response.error == false) {
+              resolve(response);
+              // location.reload();
+            } else {
+              reject(response.message);
+            }
+          })
+          .fail(function (jqXHR, textStatus, errorThrown) {
+            reject('Failed to delete zone. Please try again.');
+          });
+      });
+    },
+    allowOutsideClick: false
+  }).then((result) => {
+    if (result.isConfirmed) {
+      console.log("here zone deleted");
+
+      Swal.fire({
+        icon: 'success',
+        title: 'Deleted!',
+        text: result.value.message,
+        timer: 2000,
+        showConfirmButton: false
+      });
+
+      // Refresh the zones by triggering the city change event
+      var city_id = $("#city_id").find(":selected").data("city_id");
+      if (city_id) {
+        $("#city_id").trigger("change");
+      }
+    }
+  }).catch((error) => {
+    if (error) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Error!',
+        text: error
+      });
+    }
+  });
+}
 
 function isJSON(something) {
   if (typeof something != "string") something = JSON.stringify(something);
@@ -6965,10 +7350,20 @@ function isJSON(something) {
 $("#save_city").on("click", function (event) {
   event.preventDefault();
   var city_id = $("#city_id").find(":selected").data("city_id");
+  var zone_name = $("#zone_name").val().trim();
   var vertices = $("#vertices").val();
   var final_array = [];
   var geolocation_type = "";
   var radius = "";
+
+  // Validate zone name
+  if (!zone_name) {
+    iziToast.error({
+      message: '<span class="messages_style">Please enter a zone name!</span> '
+    });
+    return;
+  }
+
   if (vertices && city_id) {
     if (isJSON(vertices) === true) {
       geolocation_type = "circle";
@@ -6995,13 +7390,13 @@ $("#save_city").on("click", function (event) {
     }
     $('input[name="city_outlines"]').val(JSON.stringify(final_array));
     Swal.fire({
-      title: "Are You Sure !",
-      text: "You won't be able to revert this!",
+      title: "Create Zone?",
+      text: "You are creating zone '" + zone_name + "' for this city.",
       type: "info",
       showCancelButton: true,
       confirmButtonColor: "#3085d6",
       cancelButtonColor: "#d33",
-      confirmButtonText: "Yes, Update it!",
+      confirmButtonText: "Yes, Create it!",
       showLoaderOnConfirm: true,
       preConfirm: function () {
         return new Promise((resolve, reject) => {
@@ -7010,7 +7405,8 @@ $("#save_city").on("click", function (event) {
             type: "POST",
             data: {
               boundary_points: $('input[name="city_outlines"]').val(),
-              edit_city: city_id,
+              city_id: city_id,
+              zone_name: zone_name,
               radius: radius,
               geolocation_type: geolocation_type,
               [csrfName]: csrfHash
@@ -7021,11 +7417,19 @@ $("#save_city").on("click", function (event) {
               csrfName = response["csrfName"];
               csrfHash = response["csrfHash"];
               if (response.error == false) {
-                Swal.fire("Done!", response.message, "success");
+                Swal.fire("Success!", response.message, "success").then(() => {
+                  if (response.location) {
+                    window.location.href = response.location;
+                  }
+                });
                 $("#vertices").val("");
-                location.reload();
+                $("#zone_name").val("");
+                // Clear the map
+                if (typeof drawingManager !== 'undefined') {
+                  drawingManager.setDrawingMode(null);
+                }
               } else {
-                Swal.fire("Oops...", response.message, "warning");
+                Swal.fire("Error", response.message, "warning");
               }
             })
             .fail(function (jqXHR, textStatus, errorThrown) {
@@ -7038,7 +7442,7 @@ $("#save_city").on("click", function (event) {
   } else {
     iziToast.error({
       message:
-        '<span class="text_capital">Please, Select city or its outlines!</span> '
+        '<span class="messages_style">Please, Select city and draw zone boundaries!</span> '
     });
   }
 });

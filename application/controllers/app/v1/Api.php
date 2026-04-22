@@ -872,6 +872,117 @@ class Api extends CI_Controller
     {
         /*
         32. is_city_deliverable
+            latitude: 23.239918449255818 {required}
+            longitude: 69.66767665410615 {required}
+        */
+        $this->form_validation->set_rules('latitude', 'Latitude', 'trim|required|numeric|xss_clean');
+        $this->form_validation->set_rules('longitude', 'Longitude', 'trim|required|numeric|xss_clean');
+
+        if (!$this->form_validation->run()) {
+            $this->response['error'] = true;
+            $this->response['message'] = validation_errors();
+            $this->response['data'] = array();
+            echo json_encode($this->response);
+            return false;
+        }
+
+        $latitude = floatval($this->input->post('latitude', true));
+        $longitude = floatval($this->input->post('longitude', true));
+        $limit = (isset($_POST['limit']) && !empty(trim($_POST['limit']))) ? $this->input->post('limit', true) : 1;
+        $offset = (isset($_POST['offset']) && !empty(trim($_POST['offset']))) ? $this->input->post('offset', true) : 0;
+
+        // Fetch all active zones with their city info
+        $zones = $this->db->select('z.id as zone_id, z.zone_name, z.boundary_points, z.geolocation_type, z.radius, z.city_id, c.name as city_name')
+            ->from('zones z')
+            ->join('cities c', 'c.id = z.city_id', 'left')
+            ->where('z.status', 1)
+            ->get()
+            ->result_array();
+
+        $matching_zone = null;
+        foreach ($zones as $zone) {
+            $boundary_points = json_decode($zone['boundary_points'], true);
+            if (empty($boundary_points) || !is_array($boundary_points)) {
+                continue;
+            }
+
+            if (isset($zone['geolocation_type']) && $zone['geolocation_type'] == 'polygon') {
+                $vertices_x = array_column($boundary_points, 'lng');
+                $vertices_y = array_column($boundary_points, 'lat');
+                $points_polygon = count($vertices_x);
+                if (is_in_polygon($points_polygon, $vertices_x, $vertices_y, $longitude, $latitude)) {
+                    $matching_zone = $zone;
+                    break;
+                }
+            } elseif (isset($zone['geolocation_type']) && $zone['geolocation_type'] == 'circle') {
+                $center = $boundary_points[0];
+                if (!isset($center['lat']) || !isset($center['lng'])) {
+                    continue;
+                }
+                $radius_meters = sqrt(floatval($zone['radius'])) * 100;
+                $earth_radius = 6371000;
+                $dLat = deg2rad($center['lat'] - $latitude);
+                $dLon = deg2rad($center['lng'] - $longitude);
+                $a = sin($dLat / 2) * sin($dLat / 2) +
+                    cos(deg2rad($latitude)) * cos(deg2rad($center['lat'])) *
+                    sin($dLon / 2) * sin($dLon / 2);
+                $distance_meters = $earth_radius * 2 * atan2(sqrt($a), sqrt(1 - $a));
+                if ($distance_meters <= $radius_meters) {
+                    $matching_zone = $zone;
+                    break;
+                }
+            }
+        }
+
+        if (!$matching_zone) {
+            $this->response['error'] = true;
+            $this->response['message'] = "Sorry! We do not deliver food at the selected location!";
+            $this->response['data'] = array();
+            echo json_encode($this->response);
+            return false;
+        }
+
+        // Find nearest branch in the matching zone's city
+        $branch_search_res = $this->db->select('*, b.id as branch_id, b.latitude as latitude, b.longitude as longitude')
+            ->from('branch b')
+            ->join('cities c', 'c.id = b.city_id', 'left')
+            ->where('b.status', 1)
+            ->where('b.city_id', $matching_zone['city_id'])
+            ->order_by("ST_Distance_Sphere(POINT(b.latitude, b.longitude), ST_GeomFromText('POINT($latitude $longitude)'))")
+            ->limit($limit, $offset)
+            ->get()
+            ->result_array();
+
+        $branches = [];
+        foreach ($branch_search_res as $branch) {
+            $branch['image'] = (!empty($branch['image'])) ? base_url() . $branch['image'] : '';
+            $branch['date_created'] = date('Y-m-d H:i:s', strtotime($branch['date_added']));
+            $branch['branch_working_time'] = fetch_details(["branch_id" => $branch['branch_id']], "branch_timings");
+            $branches[] = $branch;
+        }
+
+        if (!empty($branches)) {
+            $branches[0]['is_branch_open'] = (is_restro_open($branches[0]['branch_id']) == true) ? "1" : "0";
+        }
+
+        $this->response['error'] = false;
+        $this->response['message'] = 'Location is deliverable.';
+        $this->response['city_id'] = $matching_zone['city_id'];
+        $this->response['city_name'] = $matching_zone['city_name'];
+        $this->response['zone_id'] = $matching_zone['zone_id'];
+        $this->response['zone_name'] = $matching_zone['zone_name'];
+        $this->response['data'] = $branches;
+        echo json_encode($this->response);
+        return false;
+    }
+
+
+    // ===========================
+
+    public function is_city_deliverable_old()
+    {
+        /*
+        32. is_city_deliverable
             id:1    // {optional}
             name:bhuj  // {optional}
             latitude: 23.239918449255818 {optional}
@@ -1341,7 +1452,7 @@ class Api extends CI_Controller
 
 
     //13. add_address
-    public function add_address()
+    public function add_address_old()
     {
 
         /*
@@ -1421,8 +1532,132 @@ class Api extends CI_Controller
         print_r(json_encode($this->response));
     }
 
+    public function add_address()
+    {
+
+        /* 
+            name:John Smith              {optional}
+            type:Home | Office | Others  {optional}
+            mobile:9727800638
+            alternate_mobile:9876543210  {optional}
+            address:#123,Time Square Empire,bhuj 
+            landmark:prince hotel        {optional}
+            area:umiya nagar
+            city:bhuj
+            pincode:370001               {optional}
+            country_code:+91             {optional}
+            state:Gujarat                {optional}
+            country:India                {optional}
+            latitude:1234
+            longitude:1234
+            is_default:1                 {optional}{default - 0}
+        */
+        if (!verify_tokens()) {
+            return false;
+        }
+
+        $this->form_validation->set_rules('name', 'Name', 'trim|xss_clean');
+        $this->form_validation->set_rules('type', 'Type', 'trim|xss_clean');
+        $this->form_validation->set_rules('mobile', 'Mobile', 'trim|numeric|required|xss_clean');
+        $this->form_validation->set_rules('alternate_mobile', 'Alternative Mobile', 'trim|numeric|xss_clean');
+        $this->form_validation->set_rules('address', 'Address', 'trim|required|xss_clean');
+        $this->form_validation->set_rules('landmark', 'Landmark', 'trim|xss_clean');
+        $this->form_validation->set_rules('area', 'Area', 'trim|required|xss_clean');
+        $this->form_validation->set_rules('city', 'City', 'trim|required|xss_clean');
+        $this->form_validation->set_rules('pincode', 'Pincode', 'trim|xss_clean');
+        $this->form_validation->set_rules('country_code', 'Country Code', 'trim|xss_clean');
+        $this->form_validation->set_rules('alternate_country_code', 'Alternate Country Code', 'trim|xss_clean');
+        $this->form_validation->set_rules('state', 'State', 'trim|xss_clean');
+        $this->form_validation->set_rules('country', 'Country', 'trim|xss_clean');
+        $this->form_validation->set_rules('latitude', 'Latitude', 'trim|required|xss_clean');
+        $this->form_validation->set_rules('longitude', 'Longitude', 'trim|required|xss_clean');
+
+        if (!$this->form_validation->run()) {
+            $this->response['error'] = true;
+            $this->response['message'] = strip_tags(validation_errors());
+            $this->response['data'] = array();
+        } else {
+            $city = (isset($_POST['city']) && !empty($_POST['city'])) ? $this->input->post("city", true) : "";
+            $user_id = (isset($this->user_details['id']) && !empty($this->user_details['id'])) ? $this->user_details['id'] : "";
+            $latitude = floatval($this->input->post('latitude', true));
+            $longitude = floatval($this->input->post('longitude', true));
+            $user_id = (isset($_POST['user_id']) && !empty($_POST['user_id'])) ? $this->input->post("user_id", true) : "";
+            if (isset($user_id) && !empty($user_id)) {
+                if (!is_exist(['id' => $user_id], 'users')) {
+                    $this->response['error'] = true;
+                    $this->response['message'] = 'User Not Found!';
+                    $this->response['data'] = array();
+                    echo json_encode($this->response);
+                    return false;
+                }
+            }
+            // if (isset($city) && !empty($city)) {
+            //     if (!is_exist(['name' => $city], 'cities')) {
+            //         $this->response['error'] = true;
+            //         $this->response['message'] = 'We are not delivering in this city !';
+            //         $this->response['data'] = array();
+            //         echo json_encode($this->response);
+            //         return false;
+            //     }
+            // }
+            // =======================================================================================================
+            // Fetch all zones with their boundary points
+            $zones = $this->db->select('z.id as zone_id, z.zone_name as zone_name, z.boundary_points, z.city_id, c.id as city_id, c.name as city_name')
+                ->from('zones z')
+                ->join('cities c', 'c.id = z.city_id', 'left')
+                ->where('z.status', 1)
+                ->get()
+                ->result_array();
+
+            $matching_zone = null;
+
+            // Check if the lat/long falls within any zone's boundary
+            foreach ($zones as $zone) {
+                if (point_in_polygon($latitude, $longitude, $zone['boundary_points'])) {  // Added $this->
+                    $matching_zone = $zone;
+                    break;
+                }
+            }
+            // $response['city_id'] = $matching_zone['city_id'];
+            // $response['city_name'] = $matching_zone['city_name'];
+            // $response['zone_id'] = $matching_zone['zone_id'];
+            // $response['zone_name'] = $matching_zone['zone_name'];
+
+            if ($matching_zone) {
+                $_POST['city_id'] = $matching_zone['city_id'];
+                $this->address_model->set_address($_POST);
+                $res = $this->address_model->get_address($user_id, false, true);
+                $this->response['error'] = false;
+                $this->response['message'] = 'Address Added Successfully';
+                $this->response['data'] = $res;
+            } else {
+                $city_id = fetch_details(['name' => $city], 'cities', 'id');
+                if (empty($city_id)) {
+                    $this->response['error'] = true;
+                    $this->response['message'] = 'We are not delivering in this city !';
+                    $this->response['data'] = array();
+                    echo json_encode($this->response);
+                    return false;
+                } else {
+                    $_POST['city_id'] = $city_id[0]['id'];
+                    $this->address_model->set_address($_POST);
+                    $res = $this->address_model->get_address($user_id, false, true);
+                    $this->response['error'] = false;
+                    $this->response['message'] = 'Address Added Successfully';
+                    $this->response['data'] = $res;
+                }
+                // $this->response['error'] = true;
+                // $this->response['message'] = "Sorry! We do not deliver food at the selected location!";
+                // $this->response['data'] = array();
+            }
+            // ========================================================================================================
+
+        }
+        print_r(json_encode($this->response));
+    }
+
     //update_address
-    public function update_address()
+    public function update_address_old()
     {
         /*
             id:1
@@ -1499,6 +1734,117 @@ class Api extends CI_Controller
             $this->response['error'] = false;
             $this->response['message'] = 'Address updated Successfully';
             $this->response['data'] = $res;
+        }
+        print_r(json_encode($this->response));
+    }
+
+    public function update_address()
+    {
+        /*
+            id:1
+            mobile:9727800638            {optional}
+            address:#123,Time Square,bhuj{optional} 
+            city:1                       {optional}
+            type:Home | Office | Others  {optional}
+            name:John Smith              {optional}
+            country_code:+91             {optional}
+            alternate_mobile:9876543210  {optional}
+            landmark:prince hotel        {optional}
+            area:umiya nagar             {optional}
+            pincode:370001               {optional}
+            state:Gujarat                {optional}
+            country:India                {optional}
+            latitude:1234                {optional}
+            longitude:1234               {optional}
+            is_default:1                 {optional}{default - 0}
+        */
+        if (!verify_tokens()) {
+            return false;
+        }
+
+        $this->form_validation->set_rules('id', 'Id', 'trim|required|numeric|xss_clean');
+        $this->form_validation->set_rules('type', 'Type', 'trim|xss_clean');
+        $this->form_validation->set_rules('country_code', 'Country Code', 'trim|xss_clean');
+        $this->form_validation->set_rules('alternate_country_code', 'Alternate Country Code', 'trim|xss_clean');
+        $this->form_validation->set_rules('name', 'Name', 'trim|xss_clean');
+        $this->form_validation->set_rules('mobile', 'Mobile', 'trim|numeric|xss_clean');
+        $this->form_validation->set_rules('alternate_mobile', 'Alternative Mobile', 'trim|numeric|xss_clean');
+        $this->form_validation->set_rules('address', 'Address', 'trim|xss_clean');
+        $this->form_validation->set_rules('landmark', 'Landmark', 'trim|xss_clean');
+        $this->form_validation->set_rules('area_id', 'Area', 'trim|xss_clean');
+        $this->form_validation->set_rules('latitude', 'Latitude', 'trim|xss_clean');
+        $this->form_validation->set_rules('longitude', 'Longitude', 'trim|xss_clean');
+        $this->form_validation->set_rules('city', 'City', 'trim|xss_clean');
+        $this->form_validation->set_rules('pincode', 'Pincode', 'trim|xss_clean');
+        $this->form_validation->set_rules('state', 'State', 'trim|xss_clean');
+        $this->form_validation->set_rules('country', 'Country', 'trim|xss_clean');
+
+        if (!$this->form_validation->run()) {
+            $this->response['error'] = true;
+            $this->response['message'] = strip_tags(validation_errors());
+            $this->response['data'] = array();
+        } else {
+            $id = (isset($_POST['id']) && !empty($_POST['id'])) ? $this->input->post("id", true) : "";
+            $city = (isset($_POST['city']) && !empty($_POST['city'])) ? $this->input->post("city", true) : "";
+            $latitude = floatval($this->input->post('latitude', true));
+            $longitude = floatval($this->input->post('longitude', true));
+
+            if (isset($id) && !empty($id)) {
+                if (!is_exist(['id' => $id], 'addresses')) {
+                    $this->response['error'] = true;
+                    $this->response['message'] = 'Address Not Found!';
+                    $this->response['data'] = array();
+                    echo json_encode($this->response);
+                    return false;
+                }
+            }
+
+            // if (isset($city) && !empty($city)) {
+            //     if (!is_exist(['name' => $city], 'cities')) {
+            //         $this->response['error'] = true;
+            //         $this->response['message'] = 'We are not delivering in this city !';
+            //         $this->response['data'] = array();
+            //         echo json_encode($this->response);
+            //         return false;
+            //     }
+            // }
+            // =======================================================================================================
+            // Fetch all zones with their boundary points
+            $zones = $this->db->select('z.id as zone_id, z.zone_name as zone_name, z.boundary_points, z.city_id, c.id as city_id, c.name as city_name')
+                ->from('zones z')
+                ->join('cities c', 'c.id = z.city_id', 'left')
+                ->where('z.status', 1)
+                ->get()
+                ->result_array();
+
+            $matching_zone = null;
+
+            // Check if the lat/long falls within any zone's boundary
+            foreach ($zones as $zone) {
+                if (point_in_polygon($latitude, $longitude, $zone['boundary_points'])) {  // Added $this->
+                    $matching_zone = $zone;
+                    break;
+                }
+            }
+            $response['city_id'] = $matching_zone['city_id'];
+            $response['city_name'] = $matching_zone['city_name'];
+            $response['zone_id'] = $matching_zone['zone_id'];
+            $response['zone_name'] = $matching_zone['zone_name'];
+
+            if ($matching_zone) {
+                $_POST['city_id'] = $matching_zone['city_id'];
+                $this->address_model->set_address($_POST);
+                $res = $this->address_model->get_address(null, $_POST['id'], true);
+                $this->response['error'] = false;
+                $this->response['message'] = 'Address updated Successfully';
+                $this->response['data'] = $res;
+            } else {
+                $this->response['error'] = true;
+                $this->response['message'] = "Sorry! We do not deliver food at the selected location!";
+                $this->response['data'] = array();
+            }
+            // =======================================================================================================
+
         }
         print_r(json_encode($this->response));
     }
