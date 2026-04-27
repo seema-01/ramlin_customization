@@ -475,7 +475,7 @@ if ($authentication_settings !== null && is_string($authentication_settings)) {
                                 <li class="nav-item">
                                     <a href="<?= base_url('admin/area/manage-city-outlines') ?>" class="nav-link">
                                         <i class="fas fa-chart-area nav-icon "></i>
-                                        <p>Deliverable Area</p>
+                                        <p>Deliverable Zone</p>
                                     </a>
                                 </li>
                             <?php } ?>

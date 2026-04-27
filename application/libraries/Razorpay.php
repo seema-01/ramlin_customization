@@ -34,7 +34,8 @@ class Razorpay
     }
     public function create_order($amount, $receipt = '', $currency = "INR")
     {
-        $amount = intval(($amount['amount']) * 100);
+        // changed by yasha
+        // $amount = intval(($amount['amount']) * 100);
         $data = array(
             'amount' => $amount,
             'receipt' => $receipt,
@@ -46,7 +47,7 @@ class Razorpay
         $res = json_decode($response['body'], true);
         $res['key_id'] = $this->key_id;
         $res['secret_key'] = $this->secret_key;
-        print_r(json_encode($res));
+        return json_encode($res);
     }
     public function fetch_payments($id = '')
     {

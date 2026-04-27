@@ -25,35 +25,35 @@
                                 <div class="row">
                                     <div class="form-group col-md-6">
                                         <label for="apiKey">apiKey <span class='text-danger text-xs'>*</span></label>
-                                        <input type="text" class="form-control" name="apiKey" value="<?= (isset($firebase_settings['apiKey']) && defined('ALLOW_MODIFICATION') && ALLOW_MODIFICATION == 0) ? str_repeat("X", strlen($firebase_settings['apiKey']) - 3) . substr($firebase_settings['apiKey'], -3) : $firebase_settings['apiKey'] ?>" placeholder="apiKey" />
+                                        <input type="text" class="form-control" name="apiKey" value="<?= (isset($firebase_settings['apiKey']) && defined('ALLOW_MODIFICATION') && ALLOW_MODIFICATION == 0) ? str_repeat("X", strlen($firebase_settings['apiKey']) - 3) . substr($firebase_settings['apiKey'], -3) : ($firebase_settings['apiKey'] ?? '') ?>" placeholder="apiKey" />
                                     </div>
                                     <div class="form-group col-md-6">
                                         <label for="authDomain">authDomain <span class='text-danger text-xs'>*</span></label>
-                                        <input type="text" class="form-control" name="authDomain" value="<?= (isset($firebase_settings['authDomain']) && defined('ALLOW_MODIFICATION') && ALLOW_MODIFICATION == 0) ? str_repeat("X", strlen($firebase_settings['authDomain']) - 3) . substr($firebase_settings['authDomain'], -3) : $firebase_settings['authDomain'] ?>" placeholder="authDomain" />
+                                        <input type="text" class="form-control" name="authDomain" value="<?= (isset($firebase_settings['authDomain']) && defined('ALLOW_MODIFICATION') && ALLOW_MODIFICATION == 0) ? str_repeat("X", strlen($firebase_settings['authDomain']) - 3) . substr($firebase_settings['authDomain'], -3) : ($firebase_settings['authDomain'] ?? '') ?>" placeholder="authDomain" />
                                     </div>
                                     <div class="form-group col-md-6">
                                         <label for="databaseURL">databaseURL <span class='text-danger text-xs'>*</span></label>
-                                        <input type="text" class="form-control" name="databaseURL" value="<?= (isset($firebase_settings['databaseURL']) && defined('ALLOW_MODIFICATION') && ALLOW_MODIFICATION == 0) ? str_repeat("X", strlen($firebase_settings['databaseURL']) - 3) . substr($firebase_settings['databaseURL'], -3) : $firebase_settings['databaseURL'] ?>" placeholder="databaseURL" />
+                                        <input type="text" class="form-control" name="databaseURL" value="<?= (isset($firebase_settings['databaseURL']) && defined('ALLOW_MODIFICATION') && ALLOW_MODIFICATION == 0) ? str_repeat("X", strlen($firebase_settings['databaseURL']) - 3) . substr($firebase_settings['databaseURL'], -3) : ($firebase_settings['databaseURL'] ?? '') ?>" placeholder="databaseURL" />
                                     </div>
                                     <div class="form-group col-md-6">
                                         <label for="projectId">projectId <span class='text-danger text-xs'>*</span></label>
-                                        <input type="text" class="form-control" name="projectId" value="<?= (isset($firebase_settings['projectId']) && defined('ALLOW_MODIFICATION') && ALLOW_MODIFICATION == 0) ? str_repeat("X", strlen($firebase_settings['projectId']) - 3) . substr($firebase_settings['projectId'], -3) : $firebase_settings['projectId'] ?>" placeholder="projectId" />
+                                        <input type="text" class="form-control" name="projectId" value="<?= (isset($firebase_settings['projectId']) && defined('ALLOW_MODIFICATION') && ALLOW_MODIFICATION == 0) ? str_repeat("X", strlen($firebase_settings['projectId']) - 3) . substr($firebase_settings['projectId'], -3) : ($firebase_settings['projectId'] ?? '') ?>" placeholder="projectId" />
                                     </div>
                                     <div class="form-group col-md-6">
                                         <label for="storageBucket">storageBucket <span class='text-danger text-xs'>*</span></label>
-                                        <input type="text" class="form-control" name="storageBucket" value="<?= (isset($firebase_settings['storageBucket']) && defined('ALLOW_MODIFICATION') && ALLOW_MODIFICATION == 0) ? str_repeat("X", strlen($firebase_settings['storageBucket']) - 3) . substr($firebase_settings['storageBucket'], -3) : $firebase_settings['storageBucket'] ?>" placeholder="storageBucket" />
+                                        <input type="text" class="form-control" name="storageBucket" value="<?= (isset($firebase_settings['storageBucket']) && defined('ALLOW_MODIFICATION') && ALLOW_MODIFICATION == 0) ? str_repeat("X", strlen($firebase_settings['storageBucket']) - 3) . substr($firebase_settings['storageBucket'], -3) : ($firebase_settings['storageBucket'] ?? '') ?>" placeholder="storageBucket" />
                                     </div>
                                     <div class="form-group col-md-6">
                                         <label for="messagingSenderId">messagingSenderId <span class='text-danger text-xs'>*</span></label>
-                                        <input type="text" class="form-control" name="messagingSenderId" value="<?= (isset($firebase_settings['messagingSenderId']) && defined('ALLOW_MODIFICATION') && ALLOW_MODIFICATION == 0) ? str_repeat("X", strlen($firebase_settings['messagingSenderId']) - 3) . substr($firebase_settings['messagingSenderId'], -3) : $firebase_settings['messagingSenderId'] ?>" placeholder="messagingSenderId" />
+                                        <input type="text" class="form-control" name="messagingSenderId" value="<?= (isset($firebase_settings['messagingSenderId']) && defined('ALLOW_MODIFICATION') && ALLOW_MODIFICATION == 0) ? str_repeat("X", strlen($firebase_settings['messagingSenderId']) - 3) . substr($firebase_settings['messagingSenderId'], -3) : ($firebase_settings['messagingSenderId'] ?? '') ?>" placeholder="messagingSenderId" />
                                     </div>
                                     <div class="form-group col-md-6">
                                         <label for="appId">appId <span class='text-danger text-xs'>*</span></label>
-                                        <input type="text" class="form-control" name="appId" value="<?= (isset($firebase_settings['appId']) && defined('ALLOW_MODIFICATION') && ALLOW_MODIFICATION == 0) ? str_repeat("X", strlen($firebase_settings['appId']) - 3) . substr($firebase_settings['appId'], -3) : $firebase_settings['appId'] ?>" placeholder="appId" />
+                                        <input type="text" class="form-control" name="appId" value="<?= (isset($firebase_settings['appId']) && defined('ALLOW_MODIFICATION') && ALLOW_MODIFICATION == 0) ? str_repeat("X", strlen($firebase_settings['appId']) - 3) . substr($firebase_settings['appId'], -3) : ($firebase_settings['appId'] ?? '') ?>" placeholder="appId" />
                                     </div>
                                     <div class="form-group col-md-6">
                                         <label for="measurementId">measurementId <span class='text-danger text-xs'>*</span></label>
-                                        <input type="text" class="form-control" name="measurementId" value="<?= (isset($firebase_settings['measurementId']) && defined('ALLOW_MODIFICATION') && ALLOW_MODIFICATION == 0) ? str_repeat("X", strlen($firebase_settings['measurementId']) - 3) . substr($firebase_settings['measurementId'], -3) : $firebase_settings['measurementId'] ?>" placeholder="measurementId" />
+                                        <input type="text" class="form-control" name="measurementId" value="<?= (isset($firebase_settings['measurementId']) && defined('ALLOW_MODIFICATION') && ALLOW_MODIFICATION == 0) ? str_repeat("X", strlen($firebase_settings['measurementId']) - 3) . substr($firebase_settings['measurementId'], -3) : ($firebase_settings['measurementId'] ?? '') ?>" placeholder="measurementId" />
                                     </div>
                                     <div class="form-group">
                                         <button type="reset" class="btn btn-warning">Reset</button>

@@ -388,9 +388,14 @@ class Order_model extends CI_Model
             $order_data['mobile'] = $data['mobile'];
             $order_data['city_id'] = 0;
         }
-        if (!empty($_POST['latitude']) && !empty($_POST['longitude'])) {
-            $order_data['latitude'] = isset($_POST['latitude']) && empty($_POST['latitude']) ? $_POST['latitude'] : '0.0';
-            $order_data['longitude'] = isset($_POST['longitude']) && empty($_POST['longitude']) ? $_POST['longitude'] : '0.0';
+        if (empty($order_data['latitude']) || empty($order_data['longitude']) || $order_data['latitude'] == '0.0' || $order_data['longitude'] == '0.0') {
+            if (!empty($_POST['latitude']) && !empty($_POST['longitude'])) {
+                $order_data['latitude'] = $_POST['latitude'];
+                $order_data['longitude'] = $_POST['longitude'];
+            } else {
+                $order_data['latitude'] = isset($order_data['latitude']) ? $order_data['latitude'] : '0.0';
+                $order_data['longitude'] = isset($order_data['longitude']) ? $order_data['longitude'] : '0.0';
+            }
         }
 
         $order_data['notes'] = $data['order_note'];

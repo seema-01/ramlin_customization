@@ -1581,7 +1581,7 @@ class Api extends CI_Controller
             $user_id = (isset($this->user_details['id']) && !empty($this->user_details['id'])) ? $this->user_details['id'] : "";
             $latitude = floatval($this->input->post('latitude', true));
             $longitude = floatval($this->input->post('longitude', true));
-            $user_id = (isset($_POST['user_id']) && !empty($_POST['user_id'])) ? $this->input->post("user_id", true) : "";
+            $_POST['user_id'] = $user_id;
             if (isset($user_id) && !empty($user_id)) {
                 if (!is_exist(['id' => $user_id], 'users')) {
                     $this->response['error'] = true;
@@ -1799,37 +1799,55 @@ class Api extends CI_Controller
                 }
             }
 
-            // if (isset($city) && !empty($city)) {
-            //     if (!is_exist(['name' => $city], 'cities')) {
-            //         $this->response['error'] = true;
-            //         $this->response['message'] = 'We are not delivering in this city !';
-            //         $this->response['data'] = array();
-            //         echo json_encode($this->response);
-            //         return false;
-            //     }
-            // }
-            // =======================================================================================================
-            // Fetch all zones with their boundary points
-            $zones = $this->db->select('z.id as zone_id, z.zone_name as zone_name, z.boundary_points, z.city_id, c.id as city_id, c.name as city_name')
-                ->from('zones z')
-                ->join('cities c', 'c.id = z.city_id', 'left')
-                ->where('z.status', 1)
-                ->get()
-                ->result_array();
+            // If lat/long are not sent, fall back to the address's stored coordinates
+            if (empty($latitude) || empty($longitude)) {
+                $existing = fetch_details(['id' => $id], 'addresses', 'latitude, longitude');
+                if (!empty($existing)) {
+                    $latitude = floatval($existing[0]['latitude']);
+                    $longitude = floatval($existing[0]['longitude']);
+                }
+            }
 
             $matching_zone = null;
 
-            // Check if the lat/long falls within any zone's boundary
-            foreach ($zones as $zone) {
-                if (point_in_polygon($latitude, $longitude, $zone['boundary_points'])) {  // Added $this->
-                    $matching_zone = $zone;
-                    break;
+            // Only run the zone check when we actually have coordinates to check
+            if (!empty($latitude) && !empty($longitude)) {
+                $zones = $this->db->select('z.id as zone_id, z.zone_name, z.boundary_points, z.geolocation_type, z.radius, c.id as city_id, c.name as city_name')
+                    ->from('zones z')
+                    ->join('cities c', 'c.id = z.city_id', 'left')
+                    ->where('z.status', 1)
+                    ->get()
+                    ->result_array();
+
+                foreach ($zones as $zone) {
+                    $geo_type = isset($zone['geolocation_type']) ? $zone['geolocation_type'] : 'polygon';
+
+                    if ($geo_type === 'circle') {
+                        // Circle zones store a single center point + radius (same convention as Zone_model)
+                        $points = json_decode($zone['boundary_points'], true);
+                        if (empty($points) || !isset($points[0]['lat'], $points[0]['lng'])) {
+                            continue;
+                        }
+                        $radius_meters = sqrt((float) $zone['radius']) * 100;
+                        $earth_radius = 6371000; // meters
+                        $dLat = deg2rad($points[0]['lat'] - $latitude);
+                        $dLon = deg2rad($points[0]['lng'] - $longitude);
+                        $a = sin($dLat / 2) * sin($dLat / 2)
+                            + cos(deg2rad($latitude)) * cos(deg2rad($points[0]['lat']))
+                            * sin($dLon / 2) * sin($dLon / 2);
+                        $distance_meters = $earth_radius * 2 * atan2(sqrt($a), sqrt(1 - $a));
+                        if ($distance_meters <= $radius_meters) {
+                            $matching_zone = $zone;
+                            break;
+                        }
+                    } else {
+                        if (point_in_polygon($latitude, $longitude, $zone['boundary_points'])) {
+                            $matching_zone = $zone;
+                            break;
+                        }
+                    }
                 }
             }
-            $response['city_id'] = $matching_zone['city_id'];
-            $response['city_name'] = $matching_zone['city_name'];
-            $response['zone_id'] = $matching_zone['zone_id'];
-            $response['zone_name'] = $matching_zone['zone_name'];
 
             if ($matching_zone) {
                 $_POST['city_id'] = $matching_zone['city_id'];
@@ -1839,12 +1857,28 @@ class Api extends CI_Controller
                 $this->response['message'] = 'Address updated Successfully';
                 $this->response['data'] = $res;
             } else {
-                $this->response['error'] = true;
-                $this->response['message'] = "Sorry! We do not deliver food at the selected location!";
-                $this->response['data'] = array();
-            }
-            // =======================================================================================================
+                // Fallback: resolve city by name (same pattern as add_address)
+                $resolved_city_id = null;
+                if (!empty($city)) {
+                    $city_row = fetch_details(['name' => $city], 'cities', 'id');
+                    if (!empty($city_row)) {
+                        $resolved_city_id = $city_row[0]['id'];
+                    }
+                }
 
+                if ($resolved_city_id) {
+                    $_POST['city_id'] = $resolved_city_id;
+                    $this->address_model->set_address($_POST);
+                    $res = $this->address_model->get_address(null, $_POST['id'], true);
+                    $this->response['error'] = false;
+                    $this->response['message'] = 'Address updated Successfully';
+                    $this->response['data'] = $res;
+                } else {
+                    $this->response['error'] = true;
+                    $this->response['message'] = "Sorry! We do not deliver food at the selected location!";
+                    $this->response['data'] = array();
+                }
+            }
         }
         print_r(json_encode($this->response));
     }
@@ -4231,9 +4265,11 @@ class Api extends CI_Controller
                     return false;
                 }
             } else if ($_POST['type'] == 'razorpay') {
-                $this->razorpay->create_order([
-                    'amount' => $order_details[0]['final_total'],
-
+                // changed by yasha
+                $price = $order_details[0]['final_total'];
+                $amount = intval($price * 100);
+                $res = $this->razorpay->create_order([
+                    'amount' => $amount,
                 ]);
             } else {
                 $this->response['error'] = true;
@@ -6322,23 +6358,54 @@ class Api extends CI_Controller
             print_r(json_encode($this->response));
             return;
         } else {
+            // changed by yasha
+            
             $order_id = (isset($_POST['order_id'])) ? $_POST['order_id'] : null;
             $order = fetch_orders($order_id, false, false, false, false, false, false, false);
+            if (empty($order)) {
+                $this->response['error'] = true;
+                $this->response['message'] = "Order details not found";
+                $this->response['data'] = array();
+                print_r(json_encode($this->response));
+                return;
+            }
+
+            $user_data = fetch_details(['id' => $order['order_data'][0]['user_id']], 'users', '*');
+            if(empty($user_data)){
+                $this->response['error'] = true;
+                $this->response['message'] = "User details not found";
+                $this->response['data'] = array();
+                print_r(json_encode($this->response));
+                return;
+            }
+            $user_data = $user_data[0];
             $settings = get_settings('system_settings', true);
             if (!empty($order) && !empty($settings)) {
+                
                 $currency = $settings['supported_locals'];
                 $price = $order['order_data'][0]['final_total'];
                 $amount = intval($price * 100);
                 $this->load->library(['razorpay']);
                 $create_order = $this->razorpay->create_order($amount, $order_id, $currency);
-                if (!empty($create_order)) {
+                $create_order = json_decode($create_order, true);
+                // if (!empty($create_order)) {
+                //     $this->response['error'] = false;
+                //     $this->response['message'] = "razorpay order created";
+                //     $this->response['data'] = $create_order;
+                // } else {
+                //     $this->response['error'] = true;
+                //     $this->response['message'] = "razorpay order not created";
+                //     $this->response['data'] = array();
+                // }
+                if (!empty($create_order) && empty($create_order['error'])) {
                     $this->response['error'] = false;
                     $this->response['message'] = "razorpay order created";
                     $this->response['data'] = $create_order;
+                    $this->response['user_data'] = $user_data;
                 } else {
                     $this->response['error'] = true;
-                    $this->response['message'] = "razorpay order not created";
-                    $this->response['data'] = array();
+                    $this->response['message'] = $create_order['error']['description'] ?? "razorpay order not created";
+                    $this->response['data'] = [];
                 }
             } else {
                 $this->response['error'] = true;

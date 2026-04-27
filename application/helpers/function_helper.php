@@ -2444,7 +2444,7 @@ function fetch_orders($order_id = NULL, $user_id = NULL, $status = NULL, $rider_
         $total = $row['total'];
     }
 
-    $search_res = $t->db->select(' o.*, u.username, u.image as profile ,u.mobile as user_mobile, u.country_code, p.name')
+    $search_res = $t->db->select(' o.*, u.username, u.image as profile ,u.mobile as user_mobile, u.country_code, p.name, a.latitude as address_latitude, a.longitude as address_longitude')
         ->join(' `users` u', 'u.id= o.user_id', 'left')
         ->join(' `order_items` oi', 'o.id= oi.order_id', 'left')
         ->join('product_variants pv', 'pv.id=oi.product_variant_id', 'left')
@@ -2487,6 +2487,7 @@ function fetch_orders($order_id = NULL, $user_id = NULL, $status = NULL, $rider_
     }
 
     $order_details = $search_res->get('`orders` o')->result_array();
+    // print_r($order_details);
 
     if (isset($order_details[0]['branch_id'])) {
         // print_r($order_details);
@@ -2495,6 +2496,17 @@ function fetch_orders($order_id = NULL, $user_id = NULL, $status = NULL, $rider_
 
     for ($i = 0; $i < count($order_details); $i++) {
         unset($order_details[$i]['order_items_snapshot']);
+
+        if ((empty($order_details[$i]['latitude']) || $order_details[$i]['latitude'] == '0.0' || $order_details[$i]['latitude'] == '0')
+            && !empty($order_details[$i]['address_latitude'])) {
+            $order_details[$i]['latitude'] = $order_details[$i]['address_latitude'];
+        }
+        if ((empty($order_details[$i]['longitude']) || $order_details[$i]['longitude'] == '0.0' || $order_details[$i]['longitude'] == '0')
+            && !empty($order_details[$i]['address_longitude'])) {
+            $order_details[$i]['longitude'] = $order_details[$i]['address_longitude'];
+        }
+        unset($order_details[$i]['address_latitude'], $order_details[$i]['address_longitude']);
+
         $t->db->select('oi.*,o.active_status,p.id as product_id,p.is_cancelable,p.cancelable_till,p.is_returnable,p.image,p.name,p.indicator,p.type,(Select count(id)
         from order_items where order_id = oi.order_id ) as order_counter')
             ->join('product_variants pv', 'pv.id=oi.product_variant_id', "left")
