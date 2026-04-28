@@ -326,8 +326,13 @@ class Order_model extends CI_Model
                 return $response;
             }
         }
+        if($data['payment_method'] == "razorpay" || $data['payment_method'] == "Razorpay"){
+            $status = (isset($data['active_status'])) ? $data['active_status'] : 'awaiting';
 
-        $status = (isset($data['active_status'])) ? $data['active_status'] : 'pending';
+        }else{
+
+            $status = (isset($data['active_status'])) ? $data['active_status'] : 'pending';
+        }
         $user_details = fetch_details(['id' => $data['user_id']], 'users', 'mobile,email');
         $is_rider_otp_setting_on = get_settings("system_settings", true);
 

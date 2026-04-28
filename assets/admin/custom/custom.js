@@ -1408,6 +1408,7 @@ function slider_query_params(p) {
   return {
     type: $("#slider_type").val(),
     status: $("#status").val(),
+    city_id: $("#city_id_filter").val(),
     discount_type: $("#discount_type").val(),
     start_date: $("#start_date").val(),
     end_date: $("#end_date").val(),
@@ -2154,9 +2155,15 @@ $(document).on("change", "#status", function () {
   $("#branch_table").bootstrapTable("refresh");
   $("#promo_code_table").bootstrapTable("refresh");
   $("#fund_transfer").bootstrapTable("refresh");
+  $("#zone_list").bootstrapTable("refresh");
 });
 $(document).on("change", "#commission_method", function () {
   $("#fund_transfer").bootstrapTable("refresh");
+});
+$(document).ready(function () {
+  $('#city_id_filter').on('change', function () {
+    $('#zone_list').bootstrapTable('refresh');
+  });
 });
 
 $(document).on("change", "#discount_type", function () {
@@ -6600,13 +6607,21 @@ async function initMap(lat = 23.242001, lng = 69.666931) {
           marker.position = place.location;
           marker.map = map;
 
-          // Update form fields
+          // Update form fields (both visible display inputs and hidden submit inputs)
           if (place.location) {
-            const latField = document.querySelector("input[name='latitude']");
-            const lngField = document.querySelector("input[name='longitude']");
+            const latVal = place.location.lat();
+            const lngVal = place.location.lng();
 
-            if (latField) latField.value = place.location.lat();
-            if (lngField) lngField.value = place.location.lng();
+            document
+              .querySelectorAll(
+                "input[name='latitude'], input[name='latitude_show'], #city_lat"
+              )
+              .forEach((el) => (el.value = latVal));
+            document
+              .querySelectorAll(
+                "input[name='longitude'], input[name='longitude_show'], #city_long"
+              )
+              .forEach((el) => (el.value = lngVal));
           }
 
           // Find the city name from address components
@@ -6666,12 +6681,20 @@ async function initMap(lat = 23.242001, lng = 69.666931) {
       geocoder.geocode({ location: latLng }, function (results, status) {
         if (status === "OK") {
           if (results[0]) {
-            // Update both hidden fields and visible fields
-            const latField = document.getElementById("city_lat");
-            const lngField = document.getElementById("city_long");
+            // Update both visible display inputs and hidden submit inputs
+            const latVal = latLng.lat();
+            const lngVal = latLng.lng();
 
-            if (latField) latField.value = latLng.lat();
-            if (lngField) lngField.value = latLng.lng();
+            document
+              .querySelectorAll(
+                "input[name='latitude'], input[name='latitude_show'], #city_lat"
+              )
+              .forEach((el) => (el.value = latVal));
+            document
+              .querySelectorAll(
+                "input[name='longitude'], input[name='longitude_show'], #city_long"
+              )
+              .forEach((el) => (el.value = lngVal));
 
             // Find city name from address components
             let cityName = "";
@@ -7268,6 +7291,74 @@ $(document).ready(function () {
   });
 });
 
+
+// Function to delete a zone
+function deleteZone(zoneId, zoneName) {
+  Swal.fire({
+    title: 'Delete Zone?',
+    text: 'Are you sure you want to delete "' + zoneName + '"? This action cannot be undone!',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonColor: '#d33',
+    cancelButtonColor: '#3085d6',
+    confirmButtonText: 'Yes, delete it!',
+    cancelButtonText: 'Cancel',
+    showLoaderOnConfirm: true,
+    preConfirm: function () {
+      return new Promise((resolve, reject) => {
+        $.ajax({
+          url: base_url + from + '/area/delete_zone',
+          type: 'POST',
+          data: {
+            zone_id: zoneId,
+            [csrfName]: csrfHash
+          },
+          dataType: 'json'
+        })
+          .done(function (response) {
+            csrfName = response['csrfName'];
+            csrfHash = response['csrfHash'];
+            if (response.error == false) {
+              resolve(response);
+              // location.reload();
+            } else {
+              reject(response.message);
+            }
+          })
+          .fail(function (jqXHR, textStatus, errorThrown) {
+            reject('Failed to delete zone. Please try again.');
+          });
+      });
+    },
+    allowOutsideClick: false
+  }).then((result) => {
+    if (result.isConfirmed) {
+      console.log("here zone deleted");
+
+      Swal.fire({
+        icon: 'success',
+        title: 'Deleted!',
+        text: result.value.message,
+        timer: 2000,
+        showConfirmButton: false
+      });
+
+      // Refresh the zones by triggering the city change event
+      var city_id = $("#city_id").find(":selected").data("city_id");
+      if (city_id) {
+        $("#city_id").trigger("change");
+      }
+    }
+  }).catch((error) => {
+    if (error) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Error!',
+        text: error
+      });
+    }
+  });
+}
 
 // Function to delete a zone
 function deleteZone(zoneId, zoneName) {
@@ -9446,6 +9537,86 @@ $('#qty').on('keyup change', function () {
 
 $(document).on('click', '.openTagModal', function () {
   $('#addTagModal').modal('show');
+});
+
+$(document).on('click', '.delete-zone', function () {
+  var zoneId = $(this).data('id');
+  if (zoneId) {
+    deleteZone(zoneId);
+  }
+});
+
+function deleteZone(zoneId) {
+  Swal.fire({
+    title: 'Are you sure?',
+    text: "This will permanently delete the zone!",
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonColor: '#3085d6',
+    cancelButtonColor: '#d33',
+    confirmButtonText: 'Yes, delete it!'
+  }).then((result) => {
+    if (result.value) {
+      $.ajax({
+        url: base_url + from + '/area/delete_zone',
+        type: 'POST',
+        data: {
+          zone_id: zoneId,
+          [csrfName]: csrfHash
+        },
+        dataType: 'json',
+        success: function (response) {
+          csrfName = response.csrfName;
+          csrfHash = response.csrfHash;
+          if (response.error == false) {
+            Swal.fire('Deleted!', response.message, 'success');
+            $('#zone_list').bootstrapTable('refresh');
+          } else {
+            Swal.fire('Error!', response.message, 'error');
+          }
+        },
+        error: function () {
+          Swal.fire('Error!', 'Failed to delete zone', 'error');
+        }
+      });
+    }
+  });
+}
+
+// Status toggle handler
+$(document).on('change', '.zone-status-toggle', function () {
+  var zoneId = $(this).data('id');
+  var status = $(this).is(':checked') ? 1 : 0;
+
+  $.ajax({
+    url: base_url + from + '/area/toggle_zone_status',
+    type: 'POST',
+    data: {
+      zone_id: zoneId,
+      status: status,
+      [csrfName]: csrfHash
+    },
+    dataType: 'json',
+    success: function (response) {
+      if (response.error == false) {
+        iziToast.success({
+          message: response.message
+        });
+        $('#zone_list').bootstrapTable('refresh');
+      } else {
+        iziToast.error({
+          message: response.message
+        });
+        $('#zone_list').bootstrapTable('refresh');
+      }
+    },
+    error: function () {
+      iziToast.error({
+        message: 'Failed to update zone status'
+      });
+      $('#zone_list').bootstrapTable('refresh');
+    }
+  });
 });
 
 // top trending categories js

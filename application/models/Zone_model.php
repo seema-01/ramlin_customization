@@ -366,7 +366,7 @@ class Zone_model extends CI_Model
         if (isset($where['city_id']) && !empty($where['city_id'])) {
             $this->db->where('z.city_id', $where['city_id']);
         }
-        if (isset($where['status']) && !empty($where['status'])) {
+        if (isset($where['status']) && $where['status'] !== '') {
             $this->db->where('z.status', (int) $where['status']);
         }
 

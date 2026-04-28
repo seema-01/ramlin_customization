@@ -561,6 +561,8 @@ class Area extends CI_Controller
 
     public function zone_list()
     {
+        // print_r($_GET);
+        // die;
         if ($this->ion_auth->logged_in() && $this->ion_auth->is_admin()) {
             if (!has_permissions('read', 'city')) {
                 echo json_encode(['error' => true, 'message' => PERMISSION_ERROR_MSG]);
@@ -585,8 +587,8 @@ class Area extends CI_Controller
                 $where['search'] = $_GET['search'];
             if (isset($_GET['city_id']) && !empty($_GET['city_id']))
                 $where['city_id'] = $_GET['city_id'];
-            if (isset($_GET['status']) && !empty($_GET['status']))
-                $where['status'] = (int) $_GET['status'];
+            if (isset($_GET['status']) && $_GET['status'] !== '')
+                $where['status'] = (int)$_GET['status'];
 
             $zones = $this->Zone_model->get_all_zones($where, $sort, $order, $limit, $offset);
 

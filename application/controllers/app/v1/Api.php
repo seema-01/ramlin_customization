@@ -961,9 +961,15 @@ class Api extends CI_Controller
             $branches[] = $branch;
         }
 
-        if (!empty($branches)) {
-            $branches[0]['is_branch_open'] = (is_restro_open($branches[0]['branch_id']) == true) ? "1" : "0";
+        if (empty($branches)) {
+            $this->response['error'] = true;
+            $this->response['message'] = "Sorry! We do not deliver food at the selected location!";
+            $this->response['data'] = array();
+            echo json_encode($this->response);
+            return false;
         }
+
+        $branches[0]['is_branch_open'] = (is_restro_open($branches[0]['branch_id']) == true) ? "1" : "0";
 
         $this->response['error'] = false;
         $this->response['message'] = 'Location is deliverable.';
@@ -5904,12 +5910,13 @@ class Api extends CI_Controller
         $this->response['data'] = $languages;
         print_r(json_encode($this->response));
     }
+
     public function razorpay_webhook()
     {
         //Debug in server first
+
         if ((strtoupper($_SERVER['REQUEST_METHOD']) != 'POST') || !array_key_exists('HTTP_X_RAZORPAY_SIGNATURE', $_SERVER))
             exit();
-
 
         $this->load->library(['razorpay']);
         $system_settings = get_settings('system_settings', true);
@@ -5925,13 +5932,15 @@ class Api extends CI_Controller
 
         $http_razorpay_signature = isset($_SERVER['HTTP_X_RAZORPAY_SIGNATURE']) ? $_SERVER['HTTP_X_RAZORPAY_SIGNATURE'] : "";
 
-        $txn_id = (isset($request['payload']['payment']['entity']['id'])) ? $request['payload']['payment']['entity']['id'] : "";
+
 
         if (!empty($request['payload']['payment']['entity']['id'])) {
             if (!empty($txn_id)) {
                 $transaction = fetch_details(['txn_id' => $txn_id], 'transactions', '*');
             }
             $amount = $request['payload']['payment']['entity']['amount'];
+            $txn_id = (isset($request['payload']['payment']['entity']['id'])) ? $request['payload']['payment']['entity']['id'] : "";
+            // $payment_id = $request['payload']['payment']['entity']['id'];
             $amount = ($amount / 100);
         } else {
             $amount = 0;
@@ -5947,29 +5956,41 @@ class Api extends CI_Controller
             $order_id = 0;
             $order_id = (isset($request['payload']['order']['entity']['notes']['order_id'])) ? $request['payload']['order']['entity']['notes']['order_id'] : $request['payload']['payment']['entity']['notes']['order_id'];
         }
-
+        
         $this->load->model('transaction_model');
+        // print_r($request[' event']);
+        // die;
+        log_message('error', 'signature1 --> ' . var_export($http_razorpay_signature, true));
+        log_message('error', 'signature2 --> ' . $http_razorpay_signature);
         if ($http_razorpay_signature) {
-            if ($request['event'] == 'payment.authorized') {
-                $currency = (isset($request['payload']['payment']['entity']['currency'])) ? $request['payload']['payment']['entity']['currency'] : "INR";
-                $this->load->library("razorpay");
-                $response = $this->razorpay->capture_payment($amount * 100, $txn_id, $currency);
-                return;
+            log_message('error', 'event --> ' . var_export($request['event'], true));
+            if ($request['event'] == "payment.authorized") {
+                // print_r("if");
+                // die;
+                if ($request['payload']['payment']['entity']['captured'] == false) {
+
+                    $currency = (isset($request['payload']['payment']['entity']['currency'])) ? $request['payload']['payment']['entity']['currency'] : "INR";
+                    $this->load->library("razorpay");
+                    $transaction_amount = $request['payload']['payment']['entity']['amount'] - $request['payload']['payment']['entity']['fee'] - $request['payload']['payment']['entity']['amount_transferred'];
+                    $response = $this->razorpay->capture_payment($transaction_amount, $txn_id, $currency);
+                    log_message('error', 'capture1 --> ' . var_export($response, true));
+                    log_message('error', 'capture2 --> ' . $response);
+                }
             }
             if ($request['event'] == 'payment.captured' || $request['event'] == 'order.paid') {
-
+                
                 if ($request['event'] == 'order.paid') {
                     $order_id = $request['payload']['order']['entity']['receipt'];
                     $order_data = fetch_orders($order_id);
                     $user_id = (isset($order_data['order_data'][0]['user_id'])) ? $order_data['order_data'][0]['user_id'] : "";
                 }
-
                 if (!empty($order_id)) {
+                    // print_r("order id is not empty");
+                    // die;
                     /* To do the wallet recharge if the order id is set in the patter */
-                    // print_r($order_id);
                     if (strpos($order_id, "wallet-refill-user") !== false) {
                         $data['transaction_type'] = "wallet";
-                        $data['user_id'] = $request['payload']['order']['entity']['notes']['user_id'];
+                        $data['user_id'] = $user_id;
                         $data['order_id'] = $order_id;
                         $data['type'] = "credit";
                         $data['txn_id'] = $txn_id;
@@ -5992,8 +6013,11 @@ class Api extends CI_Controller
                         echo json_encode($response);
                         return false;
                     } else {
+                        // print_r("else");
+                        // die;
                         /* process the order and mark it as received */
                         $order = fetch_orders($order_id, false, false, false, false, false, false, false);
+                        //  print_r($order);                         die;
                         if (isset($order['order_data'][0]['user_id'])) {
                             $user = fetch_details(['id' => $order['order_data'][0]['user_id']], 'users');
                             $overall_total = array(
@@ -6028,6 +6052,9 @@ class Api extends CI_Controller
                             } else {
                                 /* add transaction of the payment */
                                 $amount = ($request['payload']['payment']['entity']['amount'] / 100);
+                                $order_data = fetch_orders($order_id);
+                                $user_id = (isset($order_data['order_data'][0]['user_id'])) ? $order_data['order_data'][0]['user_id'] : "";
+
                                 $data = [
                                     'transaction_type' => 'transaction',
                                     'user_id' => $user_id,
@@ -6104,9 +6131,218 @@ class Api extends CI_Controller
                 return false;
             }
         } else {
+            // print_r("else");
             log_message('error', 'razorpay Webhook | Invalid Server Signature  --> ' . var_export($request['event'], true));
             return false;
         }
+    }
+
+    public function razorpay_webhook_old()
+    {
+        //Debug in server first
+        if ((strtoupper($_SERVER['REQUEST_METHOD']) != 'POST') || !array_key_exists('HTTP_X_RAZORPAY_SIGNATURE', $_SERVER))
+            // exit();
+
+
+            $this->load->library(['razorpay']);
+        $system_settings = get_settings('system_settings', true);
+        $credentials = $this->razorpay->get_credentials();
+
+        $request = file_get_contents('php://input');
+        if ($request === false || empty($request)) {
+        }
+        $request = json_decode($request, true);
+
+        define('RAZORPAY_SECRET_KEY', $credentials['secret_hash']);
+        log_message('error', 'Razorpay IPN POST --> ' . var_export($request, true));
+
+        $http_razorpay_signature = isset($_SERVER['HTTP_X_RAZORPAY_SIGNATURE']) ? $_SERVER['HTTP_X_RAZORPAY_SIGNATURE'] : "";
+
+        $txn_id = (isset($request['payload']['payment']['entity']['id'])) ? $request['payload']['payment']['entity']['id'] : "";
+
+        if (!empty($request['payload']['payment']['entity']['id'])) {
+            if (!empty($txn_id)) {
+                $transaction = fetch_details(['txn_id' => $txn_id], 'transactions', '*');
+            }
+            $amount = $request['payload']['payment']['entity']['amount'];
+            $amount = ($amount / 100);
+        } else {
+            $amount = 0;
+            $currency = (isset($request['payload']['payment']['entity']['currency'])) ? $request['payload']['payment']['entity']['currency'] : "";
+        }
+
+
+        if (!empty($transaction)) {
+
+            $order_id = $transaction[0]['order_id'];
+            $user_id = $transaction[0]['user_id'];
+        } else {
+            $order_id = 0;
+            $order_id = (isset($request['payload']['order']['entity']['notes']['order_id'])) ? $request['payload']['order']['entity']['notes']['order_id'] : $request['payload']['payment']['entity']['notes']['order_id'];
+        }
+        $this->load->model('transaction_model');
+        // if ($http_razorpay_signature) {
+        if ($request['event'] == 'payment.authorized') {
+            $currency = (isset($request['payload']['payment']['entity']['currency'])) ? $request['payload']['payment']['entity']['currency'] : "INR";
+            $this->load->library("razorpay");
+            $response = $this->razorpay->capture_payment($amount * 100, $txn_id, $currency);
+            return;
+        }
+        if ($request['event'] == 'payment.captured' || $request['event'] == 'order.paid') {
+            // print_r("jhfdjdfg");
+
+            if ($request['event'] == 'order.paid') {
+                $order_id = $request['payload']['order']['entity']['receipt'];
+                $order_data = fetch_orders($order_id);
+                $user_id = (isset($order_data['order_data'][0]['user_id'])) ? $order_data['order_data'][0]['user_id'] : "";
+            }
+
+            if (!empty($order_id)) {
+                /* To do the wallet recharge if the order id is set in the patter */
+                // print_r($order_id);
+                if (strpos($order_id, "wallet-refill-user") !== false) {
+                    $data['transaction_type'] = "wallet";
+                    $data['user_id'] = $request['payload']['order']['entity']['notes']['user_id'];
+                    $data['order_id'] = $order_id;
+                    $data['type'] = "credit";
+                    $data['txn_id'] = $txn_id;
+                    $data['amount'] = $amount / 100;
+                    $data['status'] = "success";
+                    $data['message'] = "Wallet refill successful";
+                    $this->transaction_model->add_transaction($data);
+
+                    $this->load->model('customer_model');
+                    if ($this->customer_model->update_balance($amount / 100, $user_id, 'add')) {
+                        $response['error'] = false;
+                        $response['transaction_status'] = $request['event'];
+                        $response['message'] = "Wallet recharged successfully!";
+                    } else {
+                        $response['error'] = true;
+                        $response['transaction_status'] = $request['event'];
+                        $response['message'] = "Wallet could not be recharged!";
+                        log_message('error', 'razorpay Webhook | wallet recharge failure --> ' . var_export($request['event'], true));
+                    }
+                    echo json_encode($response);
+                    return false;
+                } else {
+                    /* process the order and mark it as received */
+                    $order = fetch_orders($order_id, false, false, false, false, false, false, false);
+                    if (isset($order['order_data'][0]['user_id'])) {
+                        $user = fetch_details(['id' => $order['order_data'][0]['user_id']], 'users');
+                        $overall_total = array(
+                            'total_amount' => $order['order_data'][0]['total'],
+                            'delivery_charge' => $order['order_data'][0]['delivery_charge'],
+                            'tax_amount' => $order['order_data'][0]['total_tax_amount'],
+                            'tax_percentage' => $order['order_data'][0]['total_tax_percent'],
+                            'discount' => $order['order_data'][0]['promo_discount'],
+                            'wallet' => $order['order_data'][0]['wallet_balance'],
+                            'final_total' => $order['order_data'][0]['final_total'],
+                            'otp' => $order['order_data'][0]['otp'],
+                            'address' => $order['order_data'][0]['address'],
+                            'payment_method' => $order['order_data'][0]['payment_method']
+                        );
+
+                        $overall_order_data = array(
+                            'cart_data' => $order['order_data'][0]['order_items'],
+                            'order_data' => $overall_total,
+                            'subject' => 'Order received successfully',
+                            'user_data' => $user[0],
+                            'system_settings' => $system_settings,
+                            'user_msg' => 'Hello, Dear ' . ucfirst($user[0]['username']) . ', We have received your order successfully. Your order summaries are as followed',
+                            'otp_msg' => 'Here is your OTP. Please, give it to delivery boy only while getting your order.',
+                        );
+                        if (isset($user[0]['email']) && !empty($user[0]['email'])) {
+                            send_mail($user[0]['email'], 'Order received successfully', $this->load->view('admin/pages/view/email-template.php', $overall_order_data, TRUE));
+                        }
+                        /* No need to add because the transaction is already added just update the transaction status */
+                        if (!empty($transaction)) {
+                            $transaction_id = $transaction[0]['id'];
+                            update_details(['status' => 'success'], ['id' => $transaction_id], 'transactions');
+                        } else {
+                            /* add transaction of the payment */
+                            $amount = ($request['payload']['payment']['entity']['amount'] / 100);
+                            $order_data = fetch_orders($order_id);
+                            $user_id = (isset($order_data['order_data'][0]['user_id'])) ? $order_data['order_data'][0]['user_id'] : "";
+
+                            $data = [
+                                'transaction_type' => 'transaction',
+                                'user_id' => $user_id,
+                                'order_id' => $order_id,
+                                'type' => 'razorpay',
+                                'txn_id' => $txn_id,
+                                'amount' => $amount,
+                                'status' => 'success',
+                                'message' => 'order placed successfully',
+                            ];
+                            $this->transaction_model->add_transaction($data);
+                        }
+                        /* add transaction of the payment */
+
+                        update_details(['active_status' => 'pending'], ['id' => $order_id], 'orders');
+                        $status = json_encode(array(array('pending', date("d-m-Y h:i:sa"))));
+                        update_details(['status' => $status], ['id' => $order_id], 'orders', false);
+                    }
+                }
+            } else {
+                log_message('error', 'Razorpay NO ORDER ID IPN POST --> ' . var_export($request, true));
+                /* No order ID found */
+            }
+            $response['error'] = false;
+            $response['transaction_status'] = $request['event'];
+            $response['message'] = "Transaction successfully done";
+            echo json_encode($response);
+            return false;
+        } elseif ($request['event'] == 'payment.failed') {
+            if (!empty($order_id)) {
+                update_details(['active_status' => 'cancelled'], ['id' => $order_id], 'orders');
+            }
+            /* No need to add because the transaction is already added just update the transaction status */
+            if (!empty($transaction)) {
+                $transaction_id = $transaction[0]['id'];
+                update_details(['status' => 'failed'], ['id' => $transaction_id], 'transactions');
+            }
+            $response['error'] = true;
+            $response['transaction_status'] = $request['event'];
+            $response['message'] = "Transaction is failed. ";
+            log_message('error', 'Razorpay Webhook | Transaction is failed --> ' . var_export($request['event'], true));
+            echo json_encode($response);
+            return false;
+        } elseif ($request['event'] == 'payment.authorized') {
+            if (!empty($order_id)) {
+                update_details(['active_status' => 'pending'], ['id' => $order_id], 'orders');
+            }
+        } elseif ($request['event'] == "refund.processed") {
+            //Refund Successfully
+            $transaction = fetch_details('transactions', ['txn_id' => $request['payload']['refund']['entity']['payment_id']]);
+            if (empty($transaction)) {
+                return false;
+            }
+            process_refund($transaction[0]['id'], $transaction[0]['status']);
+            $response['error'] = false;
+            $response['transaction_status'] = $request['event'];
+            $response['message'] = "Refund successfully done. ";
+            log_message('error', 'Razorpay Webhook | Payment refund done --> ' . var_export($request['event'], true));
+            echo json_encode($response);
+            return false;
+        } elseif ($request['event'] == "refund.failed") {
+            $response['error'] = true;
+            $response['transaction_status'] = $request['event'];
+            $response['message'] = "Refund is failed. ";
+            log_message('error', 'Razorpay Webhook | Payment refund failed --> ' . var_export($request['event'], true));
+            echo json_encode($response);
+            return false;
+        } else {
+            $response['error'] = true;
+            $response['transaction_status'] = $request['event'];
+            $response['message'] = "Transaction could not be detected.";
+            log_message('error', 'Razorpay Webhook | Transaction could not be detected --> ' . var_export($request['event'], true));
+            echo json_encode($response);
+            return false;
+        }
+        // } else {
+        //     log_message('error', 'razorpay Webhook | Invalid Server Signature  --> ' . var_export($request['event'], true));
+        //     return false;
+        // }
     }
 
 
@@ -6346,6 +6582,7 @@ class Api extends CI_Controller
     {
         /*
              order_id:15
+             amount:1500 (only required while wallet recharge)
          */
         if (!verify_tokens()) {
             return false;
@@ -6359,19 +6596,40 @@ class Api extends CI_Controller
             return;
         } else {
             // changed by yasha
-            
             $order_id = (isset($_POST['order_id'])) ? $_POST['order_id'] : null;
-            $order = fetch_orders($order_id, false, false, false, false, false, false, false);
-            if (empty($order)) {
-                $this->response['error'] = true;
-                $this->response['message'] = "Order details not found";
-                $this->response['data'] = array();
-                print_r(json_encode($this->response));
-                return;
+
+            $is_wallet_refill = (is_string($order_id) && strpos($order_id, "wallet-refill-user") !== false);
+
+            if ($is_wallet_refill) {
+                /* Wallet refill flow - no order row exists in DB. Order ID format:
+                   wallet-refill-user-{user_id}-{system_time}-{3 random_number} */
+                $temp = explode("-", $order_id);
+                $user_id = (isset($temp[3]) && is_numeric($temp[3]) && !empty($temp[3])) ? $temp[3] : ($this->user_details['id'] ?? null);
+
+                $post_amount = $this->input->post('amount', true);
+                if (empty($post_amount) || !is_numeric($post_amount) || $post_amount <= 0) {
+                    $this->response['error'] = true;
+                    $this->response['message'] = "Invalid amount for wallet recharge";
+                    $this->response['data'] = array();
+                    print_r(json_encode($this->response));
+                    return;
+                }
+                $price = $post_amount;
+            } else {
+                $order = fetch_orders($order_id, false, false, false, false, false, false, false);
+                if (empty($order)) {
+                    $this->response['error'] = true;
+                    $this->response['message'] = "Order details not found";
+                    $this->response['data'] = array();
+                    print_r(json_encode($this->response));
+                    return;
+                }
+                $user_id = isset($order['order_data'][0]['user_id']) ? $order['order_data'][0]['user_id'] : $this->user_details['id'];
+                $price = $order['order_data'][0]['final_total'];
             }
 
-            $user_data = fetch_details(['id' => $order['order_data'][0]['user_id']], 'users', '*');
-            if(empty($user_data)){
+            $user_data = fetch_details(['id' => $user_id], 'users', '*');
+            if (empty($user_data)) {
                 $this->response['error'] = true;
                 $this->response['message'] = "User details not found";
                 $this->response['data'] = array();
@@ -6380,13 +6638,18 @@ class Api extends CI_Controller
             }
             $user_data = $user_data[0];
             $settings = get_settings('system_settings', true);
-            if (!empty($order) && !empty($settings)) {
-                
+            if (!empty($settings)) {
+
                 $currency = $settings['supported_locals'];
-                $price = $order['order_data'][0]['final_total'];
                 $amount = intval($price * 100);
                 $this->load->library(['razorpay']);
-                $create_order = $this->razorpay->create_order($amount, $order_id, $currency);
+
+                /* Razorpay enforces a 40-character max on the receipt field. The wallet-refill
+                   order_id format can exceed this, so truncate when needed. The full order_id
+                   is still preserved on our side and passed via Razorpay notes by the frontend. */
+                $receipt = (strlen($order_id) > 40) ? substr($order_id, 0, 40) : $order_id;
+
+                $create_order = $this->razorpay->create_order($amount, $receipt, $currency);
                 $create_order = json_decode($create_order, true);
                 // if (!empty($create_order)) {
                 //     $this->response['error'] = false;
